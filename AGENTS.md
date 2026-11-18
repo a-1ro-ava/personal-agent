@@ -36,6 +36,7 @@ cd src/functions && .venv/Scripts/python -m pytest -q tests
 * New agent settings are read in `src/agent/agent_core/config.py` and must be added to the agent `env` block in `azure.yaml`.
 * Bicep output names are upper-cased by `postprovision.ps1` before `azd env set`; azd `${VAR}` substitution is case-sensitive.
 * Collection targets are only registered through `approve_source_candidate`, which requires the user's approval to be quoted from their latest message.
+* Topic graph retrieval uses `content-topic-ks`/`personal-topic-kb` over the generated content index. Topic indexes are built and bound only with the foundry-iq-skills `topic-graph-build` CLI and its approval cards (state in the git-ignored `.foundry-iq/topicgraph-state`); never hand-edit the topic binding or `content-topic-ks.topicGraph`. See `docs/topic-graph.md`.
 
 ## References
 

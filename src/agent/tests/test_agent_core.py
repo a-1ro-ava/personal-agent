@@ -124,3 +124,23 @@ async def test_explore_falls_back_to_broad_search_without_topic_graph(monkeypatc
     await client.close()
     assert result["mode"] == "explore-fallback"
     assert calls == {"effort": "medium", "max_documents": 20}
+
+
+@pytest.mark.parametrize(("mode", "expected"), [("diverse", {"kind": "diverse", "minDiversityPoolSize": 1000, "diversityFactor": 1.0}), ("balanced", {"kind": "balanced", "minDiversityPoolSize": 1000})])
+async def test_explore_sends_per_request_topic_graph_to_topic_kb(monkeypatch: pytest.MonkeyPatch, mode, expected):
+    base = Settings.from_env().__dict__
+    settings = Settings(**{**base, "search_endpoint": "https://s", "topic_knowledge_base": "tkb", "topic_knowledge_source": "tks"})
+    client = KnowledgeClient(settings, credential=None)  # type: ignore[arg-type]
+    sent = {}
+
+    async def fake_post(url, body):
+        sent.update(url=url, body=body)
+        return {"response": [], "references": [], "activity": []}
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    result = json.loads(await client.explore("trends", topic_mode=mode, diversity=1.5))
+    await client.close()
+    [params] = sent["body"]["knowledgeSourceParams"]
+    assert sent["url"] == f"https://s/knowledgebases('tkb')/retrieve?api-version={settings.search_preview_api_version}"
+    assert (params["knowledgeSourceName"], params["kind"], params["topicGraph"]) == ("tks", "searchIndex", expected)
+    assert result["mode"] == f"explore-{mode}"

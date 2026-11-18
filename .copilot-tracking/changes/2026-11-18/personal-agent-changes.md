@@ -30,3 +30,13 @@ Scaffolded the hosted agent with `azd ai agent init` (MAF Responses local-tools 
 * Local collector run: 41 new docs, indexer success (41 processed, 0 failed)
 * Remote agent: knowledge search with citations + HTML report (SAS link served text/html with CSP); web search + candidate proposal; approval registered source with decisionNote; logs in conversations/searchlogs
 * Deployed Function `collect_now`: 6 sources, 11 new, 41 unchanged, indexer started
+
+## Follow-up: topic graph enabled (2026-11-18, agent version 3)
+
+* Built topic index `topicgraph-personal-agent-8c3348634c00` (7 topics, 149 chunks, coverage 1.0, labels by gpt-5.4-mini) with foundry-iq-skills `topic-graph-build` after explicit approval of its build card
+* Created `content-topic-ks` (searchIndex over `content-blob-ks-index`, returns snippet/blob_url/snippet_parent_id) and `personal-topic-kb`; bound topics with `configure-retrieval` (stored default `none`, separate approval); `verify-retrieval` state configured
+* scripts/setup_foundry_iq.py: `--topic-graph` no longer needs `--topic-index`; `content-topic-ks` is create-only so the CLI-owned `topicGraph` setting is preserved
+* Binding persisted across a `setup_foundry_iq.py` re-run and an indexer run
+* Live retrieval: broad question returned 20 refs via topic KB vs 0 via normal KB; none/balanced/diverse change evidence mix; quality gain not measurable at 149 chunks
+* Added test for the per-request topic graph request; src/agent 21 passed; deployed agent version 3 and verified remote `explore-diverse` answer with citations
+* docs/topic-graph.md rewritten (setup, regeneration, results); README and AGENTS.md updated

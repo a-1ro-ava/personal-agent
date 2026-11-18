@@ -26,6 +26,8 @@ ms.topic: overview
         │                    raw/ (原本)  ◀─────┤
         │                    content/ (正規化 Markdown) ◀─┘
         └─▶ items / runs (Cosmos DB) ─▶ indexer 実行 ─▶ Foundry IQ (content-blob-ks / personal-kb)
+                                                           └─ 同じインデックスを content-topic-ks / personal-topic-kb
+                                                              がトピックインデックス付きで参照 (トピック再生成は手動)
 
 [Hosted Agent] ユーザー ─▶ explore_topics (トピックグラフ) ─▶ search_knowledge (通常検索)
                         ─▶ Web 検索 ─▶ 回答 (出典付き) ─▶ save_html_report (artifacts/)
@@ -43,7 +45,7 @@ ms.topic: overview
 | [support-infra/main.bicep](support-infra/main.bicep)           | Foundry IQ、Blob、Cosmos DB、Functions、RBAC                                           |
 | [scripts](scripts)                                             | azd フック、Foundry IQ 構成、収集対象の初期登録                                        |
 | [config/sources.seed.json](config/sources.seed.json)           | 初期の収集対象                                                                         |
-| [docs/topic-graph.md](docs/topic-graph.md)                     | トピックグラフ (プレビュー) の有効化手順                                               |
+| [docs/topic-graph.md](docs/topic-graph.md)                     | トピックグラフ (プレビュー) の構成・再生成手順と検証結果                               |
 
 > [!NOTE]
 > `infra/` 配下に Bicep を置くと `microsoft.foundry` プロバイダーがそれをプロビジョニングテンプレートとして扱うため、補助リソースは `support-infra/` に置いています。
@@ -82,6 +84,7 @@ cd src/functions; .\.venv\Scripts\python.exe -m pytest -q tests
 * 収集対象の追加は、エージェントとの会話で候補を提案させ、候補 ID を示して承認する方法を基本とします
 * 初期登録を追加するには `config/sources.seed.json` を編集して `uv run scripts/seed_sources.py` を実行します
 * HTML レポートは `artifacts` コンテナに保存され、24 時間有効な読み取り専用リンク (ユーザー委任 SAS) が返されます。`REPORT_LINK_HOURS=0` でリンク発行を無効化できます
+* トピックグラフは日次収集では更新されません。チャンク数が大きく増えたら [docs/topic-graph.md](docs/topic-graph.md) の手順で新しい世代を生成します
 
 ## 設計上の判断
 
@@ -94,6 +97,6 @@ cd src/functions; .\.venv\Scripts\python.exe -m pytest -q tests
 
 ## 未対応・検証中の事項
 
-* トピックグラフはトピックインデックスの準備が必要です。未構成の間、`explore_topics` は通常検索の幅広い検索で代替します ([docs/topic-graph.md](docs/topic-graph.md))
+* トピックグラフは構成済みですが、データ量が推奨値を下回るため品質効果は未評価です。再生成は承認カードを伴う手動操作です ([docs/topic-graph.md](docs/topic-graph.md))
 * Voice Live との音声連携は未実装です (要件の検証ステップ 9)
 * 収集元の削除 (ソース側で消えた記事) の反映は未実装です

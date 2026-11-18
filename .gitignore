@@ -6,3 +6,4 @@ __pycache__/
 .pytest_cache/
 local.settings.json
 .python_packages/
+.foundry-iq/
