@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /src/agent
+    schedule:
+      interval: weekly
+    groups:
+      agent-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /src/functions
+    schedule:
+      interval: weekly
+    groups:
+      functions-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
