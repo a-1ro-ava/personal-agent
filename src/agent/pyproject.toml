@@ -1,0 +1,29 @@
+[project]
+name = "personal-agent"
+version = "0.1.0"
+description = "Personal information-gathering agent hosted on Microsoft Foundry (Microsoft Agent Framework)."
+requires-python = ">=3.13"
+dependencies = [
+    "agent-framework-foundry",
+    "agent-framework-foundry-hosting>=1.0.0b260813",
+    "azure-cosmos>=4.9",
+    "azure-identity>=1.19",
+    "azure-storage-blob>=12.24",
+    "httpx>=0.27",
+    "markdown-it-py>=3.0",
+    "nh3>=0.2.18",
+    "python-dotenv>=1.0",
+    "debugpy",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
+

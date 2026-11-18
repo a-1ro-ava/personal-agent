@@ -1,0 +1,8 @@
+name: smoke-core
+agent:
+    name: personal-agent
+    kind: hosted
+    config: .agent_configs\baseline\metadata.yaml
+options:
+    eval_model: gpt-6.1-sol
+max_samples: 15

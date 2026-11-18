@@ -1,0 +1,34 @@
+[
+  {
+    "kind": "rss",
+    "target": "https://azure.microsoft.com/en-us/blog/feed/",
+    "name": "Microsoft Azure Blog",
+    "tags": ["azure", "cloud"]
+  },
+  {
+    "kind": "rss",
+    "target": "https://www.microsoft.com/releasecommunications/api/v2/azure/rss",
+    "name": "Azure Updates",
+    "tags": ["azure", "updates"]
+  },
+  {
+    "kind": "web",
+    "target": "https://learn.microsoft.com/en-us/azure/search/whats-new",
+    "name": "Foundry IQ (Azure AI Search) - What's new",
+    "tags": ["foundry-iq", "search"]
+  },
+  {
+    "kind": "github_releases",
+    "target": "Azure/azure-dev",
+    "name": "Azure Developer CLI (azd) releases",
+    "tags": ["azd", "tooling"],
+    "maxItems": 10
+  },
+  {
+    "kind": "arxiv",
+    "target": "cat:cs.CL AND abs:\"retrieval augmented\"",
+    "name": "arXiv: retrieval augmented generation",
+    "tags": ["paper", "rag"],
+    "maxItems": 10
+  }
+]

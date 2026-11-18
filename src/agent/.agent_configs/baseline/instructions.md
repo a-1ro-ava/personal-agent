@@ -1,0 +1,1 @@
+Personal information-gathering agent (Japanese). Searches the user's collected knowledge base (Foundry IQ) with citations, explores related topics, supplements with web search, saves HTML reports, and proposes new collection sources that are registered only after explicit user approval.
