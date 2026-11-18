@@ -47,6 +47,16 @@ services:
               sku:
                 name: GlobalStandard
                 capacity: 50
+            # Dedicated deployment for the web research sub-agent: its own rate-limit bucket keeps
+            # search traffic off gpt-6.1-sol (at quota max) and the Foundry IQ planner.
+            - name: gpt-5.4-mini-search
+              model:
+                format: OpenAI
+                name: gpt-5.4-mini
+                version: "2026-03-17"
+              sku:
+                name: GlobalStandard
+                capacity: 200
             - name: text-embedding-3-large
               model:
                 format: OpenAI
@@ -73,6 +83,7 @@ services:
         env:
             PYTHONNOUSERSITE: "1"
             AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+            WEB_SEARCH_MODEL_DEPLOYMENT_NAME: gpt-5.4-mini-search
             SEARCH_ENDPOINT: ${SEARCH_ENDPOINT}
             KNOWLEDGE_BASE_NAME: ${KNOWLEDGE_BASE_NAME}
             KNOWLEDGE_SOURCE_NAME: ${KNOWLEDGE_SOURCE_NAME}

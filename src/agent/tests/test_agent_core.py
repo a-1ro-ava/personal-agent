@@ -16,6 +16,7 @@ from agent_core.knowledge import KnowledgeClient, format_retrieval
 from agent_core.reports import render_report_html
 from agent_core.store import candidate_id, decide_proposal
 from agent_core.tools import confirmation_matches
+from agent_core.web_research import WebResearcher, WebResearchError, is_rate_limited
 from pa_shared.sources import InvalidSourceError, new_source, normalize_target, normalize_url, source_id
 
 
@@ -144,3 +145,54 @@ async def test_explore_sends_per_request_topic_graph_to_topic_kb(monkeypatch: py
     assert sent["url"] == f"https://s/knowledgebases('tkb')/retrieve?api-version={settings.search_preview_api_version}"
     assert (params["knowledgeSourceName"], params["kind"], params["topicGraph"]) == ("tks", "searchIndex", expected)
     assert result["mode"] == f"explore-{mode}"
+
+
+class _RateLimit(Exception):
+    status_code = 429
+
+
+class _FlakyAgent:
+    def __init__(self, failures: list[Exception]) -> None:
+        self.failures = failures
+        self.calls = 0
+
+    async def run(self, prompt: str) -> AgentResponse:
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        return AgentResponse(messages=[Message(role="assistant", contents=[Content.from_text("ok")])])
+
+
+def test_rate_limit_is_detected_through_the_cause_chain():
+    try:
+        try:
+            raise _RateLimit("x")
+        except _RateLimit as inner:
+            raise RuntimeError("service failed to complete the prompt") from inner
+    except RuntimeError as outer:
+        assert is_rate_limited(outer)
+    assert is_rate_limited(Exception("Model deployment rate limit exceeded."))
+    assert not is_rate_limited(ValueError("bad request"))
+
+
+async def test_web_research_retries_only_rate_limits(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("agent_core.web_research.asyncio.sleep", _no_sleep)
+    researcher = WebResearcher(client=None, max_attempts=3)  # type: ignore[arg-type]
+
+    flaky = _FlakyAgent([_RateLimit("429"), _RateLimit("429")])
+    assert (await researcher._run_with_retry(flaky, "q")).text == "ok"  # type: ignore[arg-type]
+    assert flaky.calls == 3
+
+    exhausted = _FlakyAgent([_RateLimit("429")] * 3)
+    with pytest.raises(WebResearchError):
+        await researcher._run_with_retry(exhausted, "q")  # type: ignore[arg-type]
+    assert exhausted.calls == 3
+
+    broken = _FlakyAgent([ValueError("bad request")])
+    with pytest.raises(WebResearchError):
+        await researcher._run_with_retry(broken, "q")  # type: ignore[arg-type]
+    assert broken.calls == 1
+
+
+async def _no_sleep(_: float) -> None:
+    return None

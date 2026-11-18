@@ -12,7 +12,7 @@ ms.topic: overview
 | 構成要素                                                       | 実装                                                                 | リージョン |
 |----------------------------------------------------------------|----------------------------------------------------------------------|------------|
 | エージェント                                                   | Microsoft Agent Framework (Python) / Foundry Hosted Agent            | East US 2  |
-| モデル                                                         | `gpt-6.1-sol` (応答)、`gpt-5.4-mini` (検索計画)、`text-embedding-3-large` | East US 2  |
+| モデル                                                         | `gpt-6.1-sol` (応答)、`gpt-5.4-mini` (検索計画)、`gpt-5.4-mini-search` (Web検索サブエージェント)、`text-embedding-3-large` | East US 2  |
 | 情報検索基盤                                                   | Foundry IQ (サーバーレス Azure AI Search) のナレッジベース            | Japan East |
 | 原本・正規化コンテンツ・HTMLレポート                           | Azure Blob Storage (`raw` / `content` / `artifacts`)                 | Japan East |
 | 収集対象・メタデータ・ログ・候補                               | Azure Cosmos DB (サーバーレス)                                       | Japan East |
@@ -30,9 +30,11 @@ ms.topic: overview
                                                               がトピックインデックス付きで参照 (トピック再生成は手動)
 
 [Hosted Agent] ユーザー ─▶ explore_topics (トピックグラフ) ─▶ search_knowledge (通常検索)
-                        ─▶ Web 検索 ─▶ 回答 (出典付き) ─▶ save_html_report (artifacts/)
+                        ─▶ web_research (検索専用モデルで Web 検索し要約) ─▶ 回答 (出典付き) ─▶ save_html_report (artifacts/)
                         ─▶ propose_source_candidate ─▶ ユーザー承認 ─▶ approve_source_candidate ─▶ sources
 ```
+
+Web 検索は `web_research` ツールが専用デプロイ (`WEB_SEARCH_MODEL_DEPLOYMENT_NAME`) のサブエージェントで実行し、出典付きの要約だけを応答モデルへ返します。検索結果の大量のトークンが応答モデルのレート制限 (TPM) を消費しないようにするためです。429 は指数バックオフで再試行します。`WEB_SEARCH_MODEL_DEPLOYMENT_NAME` が空の場合は応答モデル自身が Web 検索します。
 
 ## リポジトリ構成
 

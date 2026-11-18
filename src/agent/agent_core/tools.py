@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
@@ -18,6 +19,9 @@ from .config import Settings
 from .knowledge import KnowledgeClient, KnowledgeError
 from .reports import ReportWriter
 from .store import Store
+from .web_research import WebResearcher, WebResearchError
+
+logger = logging.getLogger(__name__)
 
 
 def _json(value: Any) -> str:
@@ -47,11 +51,42 @@ class Services:
     knowledge: KnowledgeClient | None
     store: Store | None
     reports: ReportWriter | None
+    researcher: WebResearcher | None = None
 
 
 def build_tools(svc: Services) -> list[Any]:
     """Create the tool functions bound to the given services."""
     tools: list[Any] = []
+
+    if svc.researcher is not None:
+        researcher = svc.researcher
+        log_store = svc.store
+
+        @tool(approval_mode="never_require")
+        async def web_research(
+            ctx: FunctionInvocationContext,
+            query: Annotated[str, Field(description="調べたい内容。期間・対象などの条件も含めた具体的な依頼文。")],
+            focus: Annotated[str, Field(description="重視する観点や除外条件 (例: 「本日公開分のみ」「トレンド上位」)")] = "",
+            domains: Annotated[
+                list[str], Field(description="検索対象を限定するドメイン (例: [\"qiita.com\", \"zenn.dev\"])。不要なら空。")
+            ] = [],  # noqa: B006
+            max_results: Annotated[int, Field(description="要約に含める記事の最大件数 (1-15)")] = 8,
+        ) -> str:
+            """Web検索専用のサブエージェントで検索し、出典URL付きの要約を返す。蓄積情報にない最新情報・未収集情報の補完に使う。"""
+            try:
+                result = await researcher.research(query, focus=focus, domains=domains, max_results=max_results)
+            except WebResearchError as e:
+                return _json({"error": str(e), "hint": "Web検索が一時的に利用できません。蓄積情報で回答するか、時間をおいて再試行してください。"})
+            if log_store is not None and (result["queries"] or result["sources"]):
+                try:
+                    await log_store.add_web_search_log(
+                        _state(ctx, SESSION_ID_KEY), _state(ctx, LAST_USER_TEXT_KEY), result["queries"], result["sources"]
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to write web search log")
+            return _json(result)
+
+        tools.append(web_research)
 
     if svc.knowledge is not None:
         knowledge = svc.knowledge

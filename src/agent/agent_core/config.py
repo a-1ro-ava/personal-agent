@@ -32,6 +32,12 @@ class Settings:
     content_container: str
     report_link_hours: int
     web_search_enabled: bool
+    web_search_model: str
+
+    @property
+    def web_research_enabled(self) -> bool:
+        """Web search is delegated to a sub-agent when a dedicated deployment is configured."""
+        return self.web_search_enabled and bool(self.web_search_model)
 
     @property
     def knowledge_enabled(self) -> bool:
@@ -68,4 +74,5 @@ class Settings:
             content_container=_env("CONTENT_CONTAINER", "content"),
             report_link_hours=int(_env("REPORT_LINK_HOURS", "24") or 0),
             web_search_enabled=_env("WEB_SEARCH_ENABLED", "true").lower() not in ("0", "false", "no"),
+            web_search_model=_env("WEB_SEARCH_MODEL_DEPLOYMENT_NAME"),
         )
