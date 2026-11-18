@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
 """Foundry IQ (Azure AI Search agentic retrieval) client used by the agent tools.
 

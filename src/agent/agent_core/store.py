@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
 """Cosmos DB access for the agent: collection targets, candidates and logs."""
 

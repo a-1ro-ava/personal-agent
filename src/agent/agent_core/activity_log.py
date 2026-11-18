@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
 """Agent middleware: records conversation turns and web search activity in Cosmos DB."""
 

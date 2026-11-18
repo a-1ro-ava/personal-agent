@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
 """Azure Functions app: daily collection at 06:00 JST plus an on-demand HTTP trigger."""
 

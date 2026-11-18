@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
 """Collection pipeline: sources (Cosmos DB) -> fetch -> Blob (raw + content) -> metadata -> Foundry IQ indexer."""
 

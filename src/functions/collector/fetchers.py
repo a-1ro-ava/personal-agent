@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
 """Fetchers for each collection target kind (RSS/Atom, web page, GitHub releases, arXiv)."""
 
