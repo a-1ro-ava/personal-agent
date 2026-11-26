@@ -57,6 +57,15 @@ services:
               sku:
                 name: GlobalStandard
                 capacity: 200
+            # Illustrations of research results; only used when the user explicitly asks for a picture.
+            - name: gpt-image-2
+              model:
+                format: OpenAI
+                name: gpt-image-2
+                version: "2026-04-21"
+              sku:
+                name: GlobalStandard
+                capacity: 2
             - name: text-embedding-3-large
               model:
                 format: OpenAI
@@ -84,6 +93,7 @@ services:
             PYTHONNOUSERSITE: "1"
             AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
             WEB_SEARCH_MODEL_DEPLOYMENT_NAME: gpt-5.4-mini-search
+            IMAGE_MODEL_DEPLOYMENT_NAME: gpt-image-2
             SEARCH_ENDPOINT: ${SEARCH_ENDPOINT}
             KNOWLEDGE_BASE_NAME: ${KNOWLEDGE_BASE_NAME}
             KNOWLEDGE_SOURCE_NAME: ${KNOWLEDGE_SOURCE_NAME}

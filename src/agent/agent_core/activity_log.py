@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 LAST_USER_TEXT_KEY = "pa_last_user_text"
 SESSION_ID_KEY = "pa_session_id"
+ILLUSTRATION_COUNT_KEY = "pa_illustrations_this_turn"
 
 
 def last_user_text(messages: list[Message]) -> str:
@@ -91,6 +92,7 @@ class ActivityLoggingMiddleware(AgentMiddleware):
             # Read by tools through FunctionInvocationContext.session.state.
             context.session.state[LAST_USER_TEXT_KEY] = user_text
             context.session.state[SESSION_ID_KEY] = session_id
+            context.session.state[ILLUSTRATION_COUNT_KEY] = 0
 
         if context.stream:
             async def _on_result(response: AgentResponse) -> AgentResponse:

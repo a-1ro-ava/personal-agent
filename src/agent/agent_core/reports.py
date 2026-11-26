@@ -1,13 +1,15 @@
 # Copyright (c) 2026 a-1ro-ava
 # SPDX-License-Identifier: MIT
-"""HTML report generation: Markdown -> sanitized HTML -> Blob Storage."""
+"""HTML report generation (Markdown -> sanitized HTML) and artifact uploads to Blob Storage."""
 
 from __future__ import annotations
 
+import base64
 import html
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import nh3
 from azure.core.credentials_async import AsyncTokenCredential
@@ -45,19 +47,42 @@ table {{ border-collapse: collapse; width: 100%; }} th, td {{ border: 1px solid 
 th {{ background: #f6f8fa; }} code, pre {{ background: #f6f8fa; border-radius: 4px; }} pre {{ padding: .8rem; overflow-x: auto; }}
 blockquote {{ border-left: 4px solid #d0d7de; margin: 0; padding: 0 1rem; color: #59636e; }}
 .meta {{ color: #59636e; font-size: .9rem; }}
+figure {{ margin: 1.5rem 0; text-align: center; }} figure img {{ max-width: 100%; height: auto; border: 1px solid #d0d7de; border-radius: 6px; }}
 </style>
 </head>
 <body>
 <h1>{title}</h1>
 <p class="meta">生成日時: {generated} / Personal Agent</p>
-{body}
+{figures}{body}
 </body>
 </html>
 """
 
+MAX_REPORT_IMAGES = 4
+# Only illustrations written by ReportWriter.save_image can be embedded in a report.
+_IMAGE_BLOB_RE = re.compile(r"^images/\d{4}/\d{2}/\d{2}/[0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff-]+\.png$")
 
-def render_report_html(title: str, markdown: str, generated_at: datetime | None = None) -> str:
-    """Render Markdown into a self-contained, sanitized HTML page."""
+
+def normalize_image_blob_name(name: str, container: str) -> str | None:
+    """Return the blob path of a generated illustration inside ``container``, or None if it is not one."""
+    path = name.strip().split("?", 1)[0].lstrip("/")
+    marker = f"/{container}/"
+    if "://" in path and marker in path:
+        path = path.split(marker, 1)[1]
+    elif path.startswith(f"{container}/"):
+        path = path[len(container) + 1 :]
+    return path if _IMAGE_BLOB_RE.match(path) else None
+
+
+def _render_figures(images: list[bytes]) -> str:
+    return "".join(
+        f'<figure><img src="data:image/png;base64,{base64.b64encode(data).decode("ascii")}" alt="図解 {i}"></figure>\n'
+        for i, data in enumerate(images, start=1)
+    )
+
+
+def render_report_html(title: str, markdown: str, generated_at: datetime | None = None, images: list[bytes] | None = None) -> str:
+    """Render Markdown into a self-contained, sanitized HTML page with optional embedded PNG illustrations."""
     raw_html = _MD.render(markdown)
     safe_body = nh3.clean(
         raw_html,
@@ -67,18 +92,33 @@ def render_report_html(title: str, markdown: str, generated_at: datetime | None 
         link_rel="noopener noreferrer nofollow",
     )
     generated = (generated_at or datetime.now(UTC)).astimezone().strftime("%Y-%m-%d %H:%M %Z")
-    return PAGE_TEMPLATE.format(csp=CSP, title=html.escape(title.strip() or "Report"), generated=generated, body=safe_body)
+    return PAGE_TEMPLATE.format(
+        csp=CSP,
+        title=html.escape(title.strip() or "Report"),
+        generated=generated,
+        figures=_render_figures(images or []),
+        body=safe_body,
+    )
+
+
+def _slug(title: str, default: str) -> str:
+    return re.sub(r"[^0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff]+", "-", title).strip("-")[:60] or default
 
 
 def report_blob_name(title: str, now: datetime | None = None) -> str:
     """Blob path: reports/YYYY/MM/DD/<slug>-<short id>.html"""
     now = now or datetime.now(UTC)
-    slug = re.sub(r"[^0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff]+", "-", title).strip("-")[:60] or "report"
-    return f"reports/{now:%Y/%m/%d}/{slug}-{uuid.uuid4().hex[:8]}.html"
+    return f"reports/{now:%Y/%m/%d}/{_slug(title, 'report')}-{uuid.uuid4().hex[:8]}.html"
+
+
+def image_blob_name(title: str, now: datetime | None = None) -> str:
+    """Blob path: images/YYYY/MM/DD/<slug>-<short id>.png"""
+    now = now or datetime.now(UTC)
+    return f"images/{now:%Y/%m/%d}/{_slug(title, 'illustration')}-{uuid.uuid4().hex[:8]}.png"
 
 
 class ReportWriter:
-    """Uploads reports to the artifacts container."""
+    """Uploads reports and illustrations to the artifacts container."""
 
     def __init__(self, settings: Settings, credential: AsyncTokenCredential) -> None:
         self._settings = settings
@@ -87,16 +127,38 @@ class ReportWriter:
     async def close(self) -> None:
         await self._service.close()
 
-    async def save(self, title: str, markdown: str) -> dict[str, str]:
-        name = report_blob_name(title)
-        blob = self._service.get_blob_client(self._settings.artifacts_container, name)
-        await blob.upload_blob(
-            render_report_html(title, markdown).encode("utf-8"),
-            overwrite=True,
-            content_settings=ContentSettings(content_type="text/html; charset=utf-8"),
-            metadata={"kind": "report"},
+    async def save(self, title: str, markdown: str, image_blobs: list[str] | None = None) -> dict[str, Any]:
+        images: list[bytes] = []
+        skipped: list[str] = []
+        for ref in (image_blobs or [])[:MAX_REPORT_IMAGES]:
+            path = normalize_image_blob_name(ref, self._settings.artifacts_container)
+            if path is None:
+                skipped.append(ref)
+                continue
+            try:
+                images.append(await self._download(path))
+            except Exception:  # noqa: BLE001 - a missing illustration must not block the report
+                skipped.append(ref)
+        result = await self._upload(
+            report_blob_name(title), render_report_html(title, markdown, images=images).encode("utf-8"), "text/html; charset=utf-8", "report"
         )
-        result = {"blob": f"{self._settings.artifacts_container}/{name}", "url": blob.url}
+        if image_blobs:
+            result["embeddedImages"] = len(images)
+            if skipped:
+                result["skippedImages"] = skipped
+        return result
+
+    async def save_image(self, title: str, png: bytes) -> dict[str, Any]:
+        return await self._upload(image_blob_name(title), png, "image/png", "illustration")
+
+    async def _download(self, blob_name: str) -> bytes:
+        blob = self._service.get_blob_client(self._settings.artifacts_container, blob_name)
+        return await (await blob.download_blob()).readall()
+
+    async def _upload(self, name: str, data: bytes, content_type: str, kind: str) -> dict[str, Any]:
+        blob = self._service.get_blob_client(self._settings.artifacts_container, name)
+        await blob.upload_blob(data, overwrite=True, content_settings=ContentSettings(content_type=content_type), metadata={"kind": kind})
+        result: dict[str, Any] = {"blob": f"{self._settings.artifacts_container}/{name}", "url": blob.url}
         hours = self._settings.report_link_hours
         if hours > 0:
             try:

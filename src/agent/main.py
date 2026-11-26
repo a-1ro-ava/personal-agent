@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from agent_core.activity_log import ActivityLoggingMiddleware
 from agent_core.config import Settings
 from agent_core.history import HistoryRepairMiddleware
+from agent_core.illustrations import IllustrationGenerator, create_image_client
 from agent_core.instructions import INSTRUCTIONS
 from agent_core.knowledge import KnowledgeClient
 from agent_core.reports import ReportWriter
@@ -49,12 +50,17 @@ def build_agent(settings: Settings) -> Agent:
                 credential=DefaultAzureCredential(),
             )
         )
+    reports = ReportWriter(settings, async_credential) if settings.reports_enabled else None
+    illustrator = None
+    if settings.illustrations_enabled and reports is not None:
+        illustrator = IllustrationGenerator(create_image_client(settings.project_endpoint, async_credential), reports, settings.image_model)
     services = Services(
         settings=settings,
         knowledge=KnowledgeClient(settings, async_credential) if settings.knowledge_enabled else None,
         store=Store(settings, async_credential) if settings.store_enabled else None,
-        reports=ReportWriter(settings, async_credential) if settings.reports_enabled else None,
+        reports=reports,
         researcher=researcher,
+        illustrator=illustrator,
     )
     tools = build_tools(services)
     if settings.web_search_enabled and researcher is None:
@@ -66,13 +72,14 @@ def build_agent(settings: Settings) -> Agent:
             )
         )
     logger.info(
-        "capabilities: knowledge=%s topic_graph=%s store=%s reports=%s web_search=%s web_search_model=%s",
+        "capabilities: knowledge=%s topic_graph=%s store=%s reports=%s web_search=%s web_search_model=%s illustrations=%s",
         settings.knowledge_enabled,
         settings.topic_graph_enabled,
         settings.store_enabled,
         settings.reports_enabled,
         settings.web_search_enabled,
         settings.web_search_model if researcher else "(main model)",
+        settings.image_model if illustrator else "(disabled)",
     )
     return Agent(
         client=client,

@@ -14,10 +14,18 @@ from pydantic import Field
 
 from pa_shared.sources import SOURCE_KINDS, InvalidSourceError
 
-from .activity_log import LAST_USER_TEXT_KEY, SESSION_ID_KEY
+from .activity_log import ILLUSTRATION_COUNT_KEY, LAST_USER_TEXT_KEY, SESSION_ID_KEY
 from .config import Settings
+from .illustrations import (
+    MAX_ILLUSTRATIONS_PER_TURN,
+    IllustrationError,
+    IllustrationGenerator,
+    ImageQuality,
+    ImageSize,
+    illustration_requested,
+)
 from .knowledge import KnowledgeClient, KnowledgeError
-from .reports import ReportWriter
+from .reports import MAX_REPORT_IMAGES, ReportWriter
 from .store import Store
 from .web_research import WebResearcher, WebResearchError
 
@@ -52,6 +60,7 @@ class Services:
     store: Store | None
     reports: ReportWriter | None
     researcher: WebResearcher | None = None
+    illustrator: IllustrationGenerator | None = None
 
 
 def build_tools(svc: Services) -> list[Any]:
@@ -147,14 +156,54 @@ def build_tools(svc: Services) -> list[Any]:
         async def save_html_report(
             title: Annotated[str, Field(description="レポートのタイトル")],
             markdown: Annotated[str, Field(description="レポート本文 (Markdown)。出典URLをリンクで含めること。")],
+            image_blobs: Annotated[
+                list[str],
+                Field(description=f"埋め込む図解 (generate_illustration が返した blob) の一覧。最大{MAX_REPORT_IMAGES}件。不要なら空。"),
+            ] = [],  # noqa: B006
         ) -> str:
-            """調査結果をHTMLレポートとして生成しBlobに保存する。閲覧用URLを返す。"""
+            """調査結果をHTMLレポートとして生成しBlobに保存する。閲覧用URLを返す。生成済みの図解を埋め込める。"""
             try:
-                return _json(await reports.save(title, markdown))
+                return _json(await reports.save(title, markdown, image_blobs))
             except Exception as e:  # noqa: BLE001
                 return _json({"error": f"{type(e).__name__}: {e}"[:300]})
 
         tools += [read_collected_document, save_html_report]
+
+    if svc.illustrator is not None:
+        illustrator = svc.illustrator
+
+        @tool(approval_mode="never_require")
+        async def generate_illustration(
+            ctx: FunctionInvocationContext,
+            prompt: Annotated[
+                str,
+                Field(
+                    description="描く内容。調査結果の要点・論点の関係・構図を具体的に書く。図中に入れる短い見出し語句は「」で示す。"
+                ),
+            ],
+            title: Annotated[str, Field(description="図解のタイトル (保存名に使う)")],
+            size: Annotated[ImageSize, Field(description="1536x1024=横長 (既定), 1024x1024=正方形, 1024x1536=縦長")] = "1536x1024",
+            quality: Annotated[ImageQuality, Field(description="low/medium/high。通常は medium")] = "medium",
+        ) -> str:
+            """調査内容を図解イラスト (PNG) にして保存し、閲覧URLを返す。ユーザーが今回のメッセージで絵・イラスト・図解を明示的に求めたときだけ使う。"""
+            if not illustration_requested(_state(ctx, LAST_USER_TEXT_KEY)):
+                return _json(
+                    {
+                        "result": "not_requested",
+                        "message": "ユーザーの最新メッセージに絵・イラスト・図解の明示的な依頼がないため生成しません。文章で回答してください。",
+                    }
+                )
+            count = int(ctx.session.state.get(ILLUSTRATION_COUNT_KEY) or 0) if ctx.session else 0
+            if count >= MAX_ILLUSTRATIONS_PER_TURN:
+                return _json({"result": "limit_reached", "message": f"1回の依頼で生成できる図解は{MAX_ILLUSTRATIONS_PER_TURN}枚までです。"})
+            if ctx.session is not None:
+                ctx.session.state[ILLUSTRATION_COUNT_KEY] = count + 1
+            try:
+                return _json({"result": "generated", **await illustrator.generate(prompt, title=title, size=size, quality=quality)})
+            except IllustrationError as e:
+                return _json({"error": str(e), "hint": "図解を生成できませんでした。文章での回答を続けてください。"})
+
+        tools.append(generate_illustration)
 
     if svc.store is not None:
         store = svc.store

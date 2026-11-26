@@ -53,7 +53,7 @@ def is_rate_limited(exc: BaseException | None) -> bool:
     return False
 
 
-def _retry_after(exc: BaseException | None) -> float | None:
+def retry_after_seconds(exc: BaseException | None) -> float | None:
     seen: set[int] = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
@@ -130,7 +130,7 @@ class WebResearcher:
             except Exception as e:  # noqa: BLE001
                 if not is_rate_limited(e) or attempt == self._max_attempts:
                     raise WebResearchError(f"{type(e).__name__}: {e}"[:300]) from e
-                delay = _retry_after(e) or (2.0 * 2 ** (attempt - 1))
+                delay = retry_after_seconds(e) or (2.0 * 2 ** (attempt - 1))
                 delay = min(self._max_backoff, delay) + random.uniform(0, 1)
                 logger.warning("web research rate limited (attempt %d/%d); retrying in %.1fs", attempt, self._max_attempts, delay)
                 await asyncio.sleep(delay)

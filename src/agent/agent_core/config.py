@@ -33,6 +33,12 @@ class Settings:
     report_link_hours: int
     web_search_enabled: bool
     web_search_model: str
+    image_model: str
+
+    @property
+    def illustrations_enabled(self) -> bool:
+        """Illustrations need an image deployment and Blob Storage to keep the generated PNGs."""
+        return bool(self.image_model) and self.reports_enabled
 
     @property
     def web_research_enabled(self) -> bool:
@@ -75,4 +81,5 @@ class Settings:
             report_link_hours=int(_env("REPORT_LINK_HOURS", "24") or 0),
             web_search_enabled=_env("WEB_SEARCH_ENABLED", "true").lower() not in ("0", "false", "no"),
             web_search_model=_env("WEB_SEARCH_MODEL_DEPLOYMENT_NAME"),
+            image_model=_env("IMAGE_MODEL_DEPLOYMENT_NAME"),
         )

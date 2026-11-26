@@ -12,9 +12,9 @@ ms.topic: overview
 | 構成要素                                                       | 実装                                                                 | リージョン |
 |----------------------------------------------------------------|----------------------------------------------------------------------|------------|
 | エージェント                                                   | Microsoft Agent Framework (Python) / Foundry Hosted Agent            | East US 2  |
-| モデル                                                         | `gpt-6.1-sol` (応答)、`gpt-5.4-mini` (検索計画)、`gpt-5.4-mini-search` (Web検索サブエージェント)、`text-embedding-3-large` | East US 2  |
+| モデル                                                         | `gpt-6.1-sol` (応答)、`gpt-5.4-mini` (検索計画)、`gpt-5.4-mini-search` (Web検索サブエージェント)、`gpt-image-2` (図解)、`text-embedding-3-large` | East US 2  |
 | 情報検索基盤                                                   | Foundry IQ (サーバーレス Azure AI Search) のナレッジベース            | Japan East |
-| 原本・正規化コンテンツ・HTMLレポート                           | Azure Blob Storage (`raw` / `content` / `artifacts`)                 | Japan East |
+| 原本・正規化コンテンツ・HTMLレポート・図解                     | Azure Blob Storage (`raw` / `content` / `artifacts`)                 | Japan East |
 | 収集対象・メタデータ・ログ・候補                               | Azure Cosmos DB (サーバーレス)                                       | Japan East |
 | 定期収集                                                       | Azure Functions (Flex Consumption) 毎朝 6:00 JST                     | Japan East |
 
@@ -31,10 +31,13 @@ ms.topic: overview
 
 [Hosted Agent] ユーザー ─▶ explore_topics (トピックグラフ) ─▶ search_knowledge (通常検索)
                         ─▶ web_research (検索専用モデルで Web 検索し要約) ─▶ 回答 (出典付き) ─▶ save_html_report (artifacts/)
+                        ─▶ 「絵にして」と明示されたときだけ generate_illustration (gpt-image-2) ─▶ artifacts/images/
                         ─▶ propose_source_candidate ─▶ ユーザー承認 ─▶ approve_source_candidate ─▶ sources
 ```
 
 Web 検索は `web_research` ツールが専用デプロイ (`WEB_SEARCH_MODEL_DEPLOYMENT_NAME`) のサブエージェントで実行し、出典付きの要約だけを応答モデルへ返します。検索結果の大量のトークンが応答モデルのレート制限 (TPM) を消費しないようにするためです。429 は指数バックオフで再試行します。`WEB_SEARCH_MODEL_DEPLOYMENT_NAME` が空の場合は応答モデル自身が Web 検索します。
+
+調査内容の図解は `generate_illustration` ツールが `IMAGE_MODEL_DEPLOYMENT_NAME` (既定 `gpt-image-2`) のデプロイで生成し、PNG を `artifacts/images/` に保存して閲覧リンクを返します。`save_html_report` の `image_blobs` に渡すと、図解をレポートへ埋め込めます。画像生成はアカウントの `/openai/v1` エンドポイントを呼ぶため (プロジェクトの `/openai/v1` は画像生成を扱わない)、postdeploy フックがエージェント ID に `Cognitive Services OpenAI User` を付与します。`IMAGE_MODEL_DEPLOYMENT_NAME` が空の場合、図解は無効です。
 
 ## リポジトリ構成
 
@@ -85,12 +88,13 @@ cd src/functions; .\.venv\Scripts\python.exe -m pytest -q tests
 * 実行結果は Cosmos DB の `runs`、収集対象ごとの最終結果は `sources.lastRun` に記録されます
 * 収集対象の追加は、エージェントとの会話で候補を提案させ、候補 ID を示して承認する方法を基本とします
 * 初期登録を追加するには `config/sources.seed.json` を編集して `uv run scripts/seed_sources.py` を実行します
-* HTML レポートは `artifacts` コンテナに保存され、24 時間有効な読み取り専用リンク (ユーザー委任 SAS) が返されます。`REPORT_LINK_HOURS=0` でリンク発行を無効化できます
+* HTML レポートと図解は `artifacts` コンテナに保存され、24 時間有効な読み取り専用リンク (ユーザー委任 SAS) が返されます。`REPORT_LINK_HOURS=0` でリンク発行を無効化できます
 * トピックグラフは日次収集では更新されません。チャンク数が大きく増えたら [docs/topic-graph.md](docs/topic-graph.md) の手順で新しい世代を生成します
 
 ## 設計上の判断
 
 * 収集対象の登録は、ユーザーの最新メッセージに承認発言が含まれる場合だけ受け付けます (`approve_source_candidate` がサーバー側で照合)
+* 図解は、ユーザーの最新メッセージに「絵にして」「イラストで」「図解して」などの明示的な依頼がある場合だけ生成します (`generate_illustration` がサーバー側で照合し、1 回の依頼につき最大 2 枚)。「画像生成AIの動向」のような話題の言及では生成しません
 * 却下した候補は 90 日間再提案しません。同じ対象の提案は決定的な候補 ID に集約されます
 * RSS と arXiv の項目は初回取得の内容を保持し、Web ページと GitHub リリースは内容ハッシュで更新を検出します
 * Web ページと記事本文の取得では robots.txt を確認し、5 MB を超える応答は取り込みません

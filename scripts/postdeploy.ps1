@@ -13,6 +13,7 @@
          - Search Index Data Reader on the Foundry IQ search service
          - Cosmos DB Built-in Data Contributor on the Cosmos DB account
          - Storage Blob Data Contributor and Storage Blob Delegator on the storage account
+         - Cognitive Services OpenAI User on the Foundry account (gpt-image illustrations)
 .PARAMETER SkipFunctions
     Skip publishing the Function App.
 .PARAMETER SkipAgentRoles
@@ -41,7 +42,7 @@ Import-Module (Join-Path $PSScriptRoot 'AzdEnv.psm1') -Force
 function Add-AgentRoleAssignments {
     <#
     .SYNOPSIS
-        Grants the agent identity access to Search, Cosmos DB and Blob Storage (idempotent).
+        Grants the agent identity access to Search, Cosmos DB, Blob Storage and the AI account (idempotent).
     #>
     [CmdletBinding()]
     [OutputType([void])]
@@ -54,11 +55,14 @@ function Add-AgentRoleAssignments {
     $sub = $EnvValues['AZURE_SUBSCRIPTION_ID']
     $searchId = "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.Search/searchServices/$($EnvValues['SEARCH_SERVICE_NAME'])"
     $storageId = "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.Storage/storageAccounts/$($EnvValues['STORAGE_ACCOUNT_NAME'])"
+    $aiAccountId = "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.CognitiveServices/accounts/$($EnvValues['AZURE_AI_ACCOUNT_NAME'])"
 
     $assignments = @(
         @{ Scope = $searchId; Role = 'Search Index Data Reader' }
         @{ Scope = $storageId; Role = 'Storage Blob Data Contributor' }
         @{ Scope = $storageId; Role = 'Storage Blob Delegator' }
+        # Image generation is called on the account-level endpoint, outside the project's implicit access.
+        @{ Scope = $aiAccountId; Role = 'Cognitive Services OpenAI User' }
     )
     foreach ($a in $assignments) {
         az role assignment create --assignee-object-id $PrincipalId --assignee-principal-type ServicePrincipal `
