@@ -31,13 +31,13 @@ ms.topic: overview
 
 [Hosted Agent] ユーザー ─▶ explore_topics (トピックグラフ) ─▶ search_knowledge (通常検索)
                         ─▶ web_research (検索専用モデルで Web 検索し要約) ─▶ 回答 (出典付き) ─▶ save_html_report (artifacts/)
-                        ─▶ 「絵にして」と明示されたときだけ generate_illustration (gpt-image-2) ─▶ artifacts/images/
+                        ─▶ 「絵にして」と明示されたときだけ generate_illustration (gpt-image-2) ─▶ 会話に画像表示 + artifacts/images/
                         ─▶ propose_source_candidate ─▶ ユーザー承認 ─▶ approve_source_candidate ─▶ sources
 ```
 
 Web 検索は `web_research` ツールが専用デプロイ (`WEB_SEARCH_MODEL_DEPLOYMENT_NAME`) のサブエージェントで実行し、出典付きの要約だけを応答モデルへ返します。検索結果の大量のトークンが応答モデルのレート制限 (TPM) を消費しないようにするためです。429 は指数バックオフで再試行します。`WEB_SEARCH_MODEL_DEPLOYMENT_NAME` が空の場合は応答モデル自身が Web 検索します。
 
-調査内容の図解は `generate_illustration` ツールが `IMAGE_MODEL_DEPLOYMENT_NAME` (既定 `gpt-image-2`) のデプロイで生成し、PNG を `artifacts/images/` に保存して閲覧リンクを返します。`save_html_report` の `image_blobs` に渡すと、図解をレポートへ埋め込めます。画像生成はアカウントの `/openai/v1` エンドポイントを呼ぶため (プロジェクトの `/openai/v1` は画像生成を扱わない)、postdeploy フックがエージェント ID に `Cognitive Services OpenAI User` を付与します。`IMAGE_MODEL_DEPLOYMENT_NAME` が空の場合、図解は無効です。
+調査内容の図解は `generate_illustration` ツールが `IMAGE_MODEL_DEPLOYMENT_NAME` (既定 `gpt-image-2`) のデプロイで生成します。画像は JPEG (1024x688 / 1024x1024 / 688x1024) で、Teams のインライン画像の制限 (1 辺 1024 px 以下、1 MB 以下) に収まります。生成した画像は `IllustrationDisplayMiddleware` が応答に Responses の `image_generation_call` 項目として追加するため、対応するクライアントでは会話に直接表示されます。あわせて `artifacts/images/` に保存して閲覧リンクも返し、`save_html_report` の `image_blobs` に渡すとレポートへ埋め込めます。画像生成はアカウントの `/openai/v1` エンドポイントを呼ぶため (プロジェクトの `/openai/v1` は画像生成を扱わない)、postdeploy フックがエージェント ID に `Cognitive Services OpenAI User` を付与します。`IMAGE_MODEL_DEPLOYMENT_NAME` が空の場合、図解は無効です。
 
 ## リポジトリ構成
 

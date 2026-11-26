@@ -59,8 +59,8 @@ figure {{ margin: 1.5rem 0; text-align: center; }} figure img {{ max-width: 100%
 """
 
 MAX_REPORT_IMAGES = 4
-# Only illustrations written by ReportWriter.save_image can be embedded in a report.
-_IMAGE_BLOB_RE = re.compile(r"^images/\d{4}/\d{2}/\d{2}/[0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff-]+\.png$")
+# Only illustrations written by ReportWriter.save_image can be embedded in a report (PNG from earlier versions).
+_IMAGE_BLOB_RE = re.compile(r"^images/\d{4}/\d{2}/\d{2}/[0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff-]+\.(jpg|png)$")
 
 
 def normalize_image_blob_name(name: str, container: str) -> str | None:
@@ -74,15 +74,19 @@ def normalize_image_blob_name(name: str, container: str) -> str | None:
     return path if _IMAGE_BLOB_RE.match(path) else None
 
 
+def _image_media_type(data: bytes) -> str:
+    return "image/png" if data.startswith(b"\x89PNG") else "image/jpeg"
+
+
 def _render_figures(images: list[bytes]) -> str:
     return "".join(
-        f'<figure><img src="data:image/png;base64,{base64.b64encode(data).decode("ascii")}" alt="図解 {i}"></figure>\n'
+        f'<figure><img src="data:{_image_media_type(data)};base64,{base64.b64encode(data).decode("ascii")}" alt="図解 {i}"></figure>\n'
         for i, data in enumerate(images, start=1)
     )
 
 
 def render_report_html(title: str, markdown: str, generated_at: datetime | None = None, images: list[bytes] | None = None) -> str:
-    """Render Markdown into a self-contained, sanitized HTML page with optional embedded PNG illustrations."""
+    """Render Markdown into a self-contained, sanitized HTML page with optional embedded illustrations."""
     raw_html = _MD.render(markdown)
     safe_body = nh3.clean(
         raw_html,
@@ -112,9 +116,9 @@ def report_blob_name(title: str, now: datetime | None = None) -> str:
 
 
 def image_blob_name(title: str, now: datetime | None = None) -> str:
-    """Blob path: images/YYYY/MM/DD/<slug>-<short id>.png"""
+    """Blob path: images/YYYY/MM/DD/<slug>-<short id>.jpg"""
     now = now or datetime.now(UTC)
-    return f"images/{now:%Y/%m/%d}/{_slug(title, 'illustration')}-{uuid.uuid4().hex[:8]}.png"
+    return f"images/{now:%Y/%m/%d}/{_slug(title, 'illustration')}-{uuid.uuid4().hex[:8]}.jpg"
 
 
 class ReportWriter:
@@ -148,8 +152,8 @@ class ReportWriter:
                 result["skippedImages"] = skipped
         return result
 
-    async def save_image(self, title: str, png: bytes) -> dict[str, Any]:
-        return await self._upload(image_blob_name(title), png, "image/png", "illustration")
+    async def save_image(self, title: str, jpeg: bytes) -> dict[str, Any]:
+        return await self._upload(image_blob_name(title), jpeg, "image/jpeg", "illustration")
 
     async def _download(self, blob_name: str) -> bytes:
         blob = self._service.get_blob_client(self._settings.artifacts_container, blob_name)

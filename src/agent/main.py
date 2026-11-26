@@ -10,6 +10,7 @@ the related tools so the agent can be run and verified incrementally.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
@@ -21,7 +22,7 @@ from dotenv import load_dotenv
 from agent_core.activity_log import ActivityLoggingMiddleware
 from agent_core.config import Settings
 from agent_core.history import HistoryRepairMiddleware
-from agent_core.illustrations import IllustrationGenerator, create_image_client
+from agent_core.illustrations import IllustrationDisplayMiddleware, IllustrationGenerator, create_image_client
 from agent_core.instructions import INSTRUCTIONS
 from agent_core.knowledge import KnowledgeClient
 from agent_core.reports import ReportWriter
@@ -81,12 +82,15 @@ def build_agent(settings: Settings) -> Agent:
         settings.web_search_model if researcher else "(main model)",
         settings.image_model if illustrator else "(disabled)",
     )
+    middleware: list[Any] = [HistoryRepairMiddleware(), ActivityLoggingMiddleware(services.store)]
+    if illustrator is not None:
+        middleware.append(IllustrationDisplayMiddleware(illustrator))
     return Agent(
         client=client,
         name="personal-agent",
         instructions=INSTRUCTIONS,
         tools=tools,
-        middleware=[HistoryRepairMiddleware(), ActivityLoggingMiddleware(services.store)],
+        middleware=middleware,
         # History is managed by the hosting infrastructure.
         default_options={"store": False},
     )

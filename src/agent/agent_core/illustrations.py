@@ -5,17 +5,24 @@
 Image generation is slow and costly, so it only runs when the user's latest message explicitly asks
 for a picture (「絵にして」, 「イラストで」, 「図解して」, ...). The check is done in code on the user's
 own words, not left to the model's judgement.
+
+Generated images are saved to Blob Storage (link + report embedding) and also returned inline as a
+Responses ``image_generation_call`` output item, so chat clients can show the picture directly.
+Sizes and format stay within the Teams inline image limits (<= 1024 px per side, <= 1 MB, JPEG).
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import random
 import re
+from collections import OrderedDict
 from typing import Any, Literal
 
+from agent_framework import AgentContext, AgentMiddleware, AgentResponse, AgentResponseUpdate, Content
 from azure.core.credentials_async import AsyncTokenCredential
 from azure.identity.aio import get_bearer_token_provider
 from openai import AsyncOpenAI
@@ -25,11 +32,13 @@ from .web_research import is_rate_limited, retry_after_seconds
 
 logger = logging.getLogger(__name__)
 
-ImageSize = Literal["1536x1024", "1024x1024", "1024x1536"]
+ImageSize = Literal["1024x688", "1024x1024", "688x1024"]
 ImageQuality = Literal["low", "medium", "high"]
 
 MAX_PROMPT_CHARS = 3000
 MAX_ILLUSTRATIONS_PER_TURN = 2
+JPEG_COMPRESSION = 85
+_MAX_PENDING_IMAGES = 8
 
 STYLE_GUIDE = """\
 調査結果を1枚で伝える、清潔感のあるフラットデザインの図解イラスト。白基調の背景、論点ごとに区切ったレイアウト、アイコンと矢印で関係を示す。
@@ -94,27 +103,43 @@ class IllustrationGenerator:
         self._timeout = timeout_seconds
         # The image deployment has a very small quota; serialize requests.
         self._semaphore = asyncio.Semaphore(1)
+        # Base64 images awaiting inline display, keyed by blob path (see IllustrationDisplayMiddleware).
+        self._pending: OrderedDict[str, str] = OrderedDict()
 
-    async def generate(self, prompt: str, *, title: str, size: ImageSize = "1536x1024", quality: ImageQuality = "medium") -> dict[str, Any]:
+    async def generate(self, prompt: str, *, title: str, size: ImageSize = "1024x688", quality: ImageQuality = "medium") -> dict[str, Any]:
         """Generate one illustration and return the saved blob path and view URL."""
         body = prompt.strip()[:MAX_PROMPT_CHARS]
         if not body:
             raise IllustrationError("prompt is empty")
         async with self._semaphore:
-            png = await self._generate_with_retry(f"{STYLE_GUIDE}\n{body}", size, quality)
-        saved = await self._writer.save_image(title, png)
+            b64 = await self._generate_with_retry(f"{STYLE_GUIDE}\n{body}", size, quality)
+        saved = await self._writer.save_image(title, base64.b64decode(b64))
+        self._pending[saved["blob"]] = b64
+        while len(self._pending) > _MAX_PENDING_IMAGES:
+            self._pending.popitem(last=False)
         return {**saved, "model": self._model, "size": size, "quality": quality}
 
-    async def _generate_with_retry(self, prompt: str, size: str, quality: str) -> bytes:
+    def take_pending(self, blob: str) -> str | None:
+        """Pop the base64 image generated for ``blob``, if it has not been displayed yet."""
+        return self._pending.pop(blob, None)
+
+    async def _generate_with_retry(self, prompt: str, size: str, quality: str) -> str:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 response = await self._client.images.generate(
-                    model=self._model, prompt=prompt, size=size, quality=quality, n=1, timeout=self._timeout
+                    model=self._model,
+                    prompt=prompt,
+                    size=size,
+                    quality=quality,
+                    output_format="jpeg",
+                    output_compression=JPEG_COMPRESSION,
+                    n=1,
+                    timeout=self._timeout,
                 )
                 data = response.data[0].b64_json if response.data else None
                 if not data:
                     raise IllustrationError("the image model returned no image")
-                return base64.b64decode(data)
+                return data
             except IllustrationError:
                 raise
             except Exception as e:  # noqa: BLE001
@@ -125,3 +150,61 @@ class IllustrationGenerator:
                 logger.warning("image generation rate limited (attempt %d/%d); retrying in %.1fs", attempt, self._max_attempts, delay)
                 await asyncio.sleep(delay)
         raise IllustrationError("unreachable")
+
+
+def _function_result_text(content: Content) -> str:
+    result = content.result
+    if isinstance(result, str):
+        return result
+    if isinstance(result, list):
+        return "".join(getattr(item, "text", None) or "" for item in result)
+    return ""
+
+
+def _generated_blob(content: Content) -> str | None:
+    if content.type != "function_result":
+        return None
+    text = _function_result_text(content)
+    if '"generated"' not in text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict) and payload.get("result") == "generated" and isinstance(payload.get("blob"), str):
+        return payload["blob"]
+    return None
+
+
+def attach_generated_images(contents: list[Content], illustrator: IllustrationGenerator) -> list[Content]:
+    """Insert an inline image result right after each successful generate_illustration result."""
+    out: list[Content] = []
+    for content in contents:
+        out.append(content)
+        blob = _generated_blob(content)
+        b64 = illustrator.take_pending(blob) if blob else None
+        if b64:
+            out.append(Content.from_image_generation_tool_result(image_id=content.call_id, outputs=b64))
+    return out
+
+
+class IllustrationDisplayMiddleware(AgentMiddleware):
+    """Adds generated illustrations to the agent output as image items (Responses ``image_generation_call``)."""
+
+    def __init__(self, illustrator: IllustrationGenerator) -> None:
+        self._illustrator = illustrator
+
+    async def process(self, context: AgentContext, call_next) -> None:  # type: ignore[override]
+        if context.stream:
+
+            def _attach(update: AgentResponseUpdate) -> AgentResponseUpdate:
+                update.contents = attach_generated_images(list(update.contents), self._illustrator)
+                return update
+
+            context.stream_transform_hooks.append(_attach)
+            await call_next()
+        else:
+            await call_next()
+            if isinstance(context.result, AgentResponse):
+                for message in context.result.messages:
+                    message.contents = attach_generated_images(list(message.contents), self._illustrator)

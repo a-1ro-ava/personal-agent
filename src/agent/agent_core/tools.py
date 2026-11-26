@@ -182,10 +182,10 @@ def build_tools(svc: Services) -> list[Any]:
                 ),
             ],
             title: Annotated[str, Field(description="図解のタイトル (保存名に使う)")],
-            size: Annotated[ImageSize, Field(description="1536x1024=横長 (既定), 1024x1024=正方形, 1024x1536=縦長")] = "1536x1024",
+            size: Annotated[ImageSize, Field(description="1024x688=横長 (既定), 1024x1024=正方形, 688x1024=縦長")] = "1024x688",
             quality: Annotated[ImageQuality, Field(description="low/medium/high。通常は medium")] = "medium",
         ) -> str:
-            """調査内容を図解イラスト (PNG) にして保存し、閲覧URLを返す。ユーザーが今回のメッセージで絵・イラスト・図解を明示的に求めたときだけ使う。"""
+            """調査内容を図解イラスト (JPEG) にして保存し、閲覧URLを返す。画像は会話にも表示される。ユーザーが今回のメッセージで絵・イラスト・図解を明示的に求めたときだけ使う。"""
             if not illustration_requested(_state(ctx, LAST_USER_TEXT_KEY)):
                 return _json(
                     {

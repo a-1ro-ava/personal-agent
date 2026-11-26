@@ -13,7 +13,13 @@ from agent_framework import AgentResponse, AgentSession, Content, FunctionInvoca
 from agent_core.activity_log import LAST_USER_TEXT_KEY, extract_activity
 from agent_core.config import Settings
 from agent_core.history import drop_unpaired_tool_calls
-from agent_core.illustrations import IllustrationError, IllustrationGenerator, account_openai_base_url, illustration_requested
+from agent_core.illustrations import (
+    IllustrationError,
+    IllustrationGenerator,
+    account_openai_base_url,
+    attach_generated_images,
+    illustration_requested,
+)
 from agent_core.knowledge import KnowledgeClient, format_retrieval
 from agent_core.reports import normalize_image_blob_name, render_report_html
 from agent_core.store import candidate_id, decide_proposal
@@ -264,12 +270,12 @@ class _FakeImages:
 
     async def generate(self, **kwargs):
         self.calls.append(kwargs)
-        return type("R", (), {"data": [type("D", (), {"b64_json": "iVBORw0K"})()]})()
+        return type("R", (), {"data": [type("D", (), {"b64_json": "/9j/4AAQ"})()]})()
 
 
 class _FakeWriter:
-    async def save_image(self, title: str, png: bytes) -> dict:
-        return {"blob": "artifacts/images/2026/11/26/x.png", "size_bytes": len(png)}
+    async def save_image(self, title: str, jpeg: bytes) -> dict:
+        return {"blob": "artifacts/images/2026/11/26/x.jpg", "size_bytes": len(jpeg)}
 
 
 def _illustration_tool(images: _FakeImages):
@@ -299,8 +305,22 @@ async def test_illustration_tool_only_generates_on_explicit_request():
     assert images.calls == []
 
     generated = await _invoke_with_user_text(tool_fn, "調査結果を絵にして")
-    assert generated["result"] == "generated" and generated["blob"].endswith(".png")
-    assert [(c["model"], c["size"], c["n"]) for c in images.calls] == [("gpt-image-2", "1536x1024", 1)]
+    assert generated["result"] == "generated" and generated["blob"].endswith(".jpg")
+    assert [(c["model"], c["size"], c["output_format"], c["n"]) for c in images.calls] == [("gpt-image-2", "1024x688", "jpeg", 1)]
+
+
+async def test_generated_illustration_is_attached_inline_once():
+    images = _FakeImages()
+    illustrator = IllustrationGenerator(type("C", (), {"images": images})(), _FakeWriter(), "gpt-image-2")  # type: ignore[arg-type]
+    saved = await illustrator.generate("p", title="t")
+    results = [
+        Content.from_function_result("c1", result=json.dumps({"result": "generated", **saved})),
+        Content.from_function_result("c2", result=json.dumps({"result": "not_requested"})),
+    ]
+    first = attach_generated_images(results, illustrator)
+    assert [(c.type, c.call_id) for c in first] == [("function_result", "c1"), ("image_generation_tool_result", None), ("function_result", "c2")]
+    assert first[1].outputs == "/9j/4AAQ"
+    assert [c.type for c in attach_generated_images(results, illustrator)] == ["function_result", "function_result"]
 
 
 async def test_illustration_rate_limit_is_retried_then_reported(monkeypatch: pytest.MonkeyPatch):
@@ -320,10 +340,11 @@ async def test_illustration_rate_limit_is_retried_then_reported(monkeypatch: pyt
 
 def test_report_embeds_only_generated_illustrations():
     assert account_openai_base_url("https://acct.services.ai.azure.com/api/projects/proj/") == "https://acct.services.ai.azure.com/openai/v1"
-    page = render_report_html("T", "body", images=[b"\x89PNG"])
+    page = render_report_html("T", "body", images=[b"\x89PNG", b"\xff\xd8\xff"])
     assert '<img src="data:image/png;base64,iVBORw==" alt="図解 1">' in page
-    url = "https://acct.blob.core.windows.net/artifacts/images/2026/11/26/図解-ab12cd34.png?sv=x&sig=y"
-    assert normalize_image_blob_name(url, "artifacts") == "images/2026/11/26/図解-ab12cd34.png"
+    assert '<img src="data:image/jpeg;base64,/9j/" alt="図解 2">' in page
+    url = "https://acct.blob.core.windows.net/artifacts/images/2026/11/26/図解-ab12cd34.jpg?sv=x&sig=y"
+    assert normalize_image_blob_name(url, "artifacts") == "images/2026/11/26/図解-ab12cd34.jpg"
     assert normalize_image_blob_name("artifacts/images/2026/11/26/a.png", "artifacts") == "images/2026/11/26/a.png"
     for bad in ("reports/2026/11/26/a.html", "images/2026/11/26/../../x.png", "images/a.png", "content/images/2026/11/26/a.png"):
         assert normalize_image_blob_name(bad, "artifacts") is None
