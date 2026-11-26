@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 from agent_core.activity_log import ActivityLoggingMiddleware
 from agent_core.config import Settings
+from agent_core.history import HistoryRepairMiddleware
 from agent_core.instructions import INSTRUCTIONS
 from agent_core.knowledge import KnowledgeClient
 from agent_core.reports import ReportWriter
@@ -78,7 +79,7 @@ def build_agent(settings: Settings) -> Agent:
         name="personal-agent",
         instructions=INSTRUCTIONS,
         tools=tools,
-        middleware=[ActivityLoggingMiddleware(services.store)],
+        middleware=[HistoryRepairMiddleware(), ActivityLoggingMiddleware(services.store)],
         # History is managed by the hosting infrastructure.
         default_options={"store": False},
     )

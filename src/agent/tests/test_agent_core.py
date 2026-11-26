@@ -12,6 +12,7 @@ from agent_framework import AgentResponse, Content, Message
 
 from agent_core.activity_log import extract_activity
 from agent_core.config import Settings
+from agent_core.history import drop_unpaired_tool_calls
 from agent_core.knowledge import KnowledgeClient, format_retrieval
 from agent_core.reports import render_report_html
 from agent_core.store import candidate_id, decide_proposal
@@ -93,6 +94,29 @@ def test_extract_activity_collects_queries_and_cited_urls():
     assert activity["queries"] == ["MAF release"]
     assert activity["urls"] == [{"url": "https://example.com/a", "title": "A"}]
     assert [c["name"] for c in activity["toolCalls"]] == ["web_search", "search_knowledge"]
+
+
+def test_unpaired_tool_calls_from_truncated_history_are_dropped():
+    # The history window starts at an output whose call was cut off; the last call never got a result.
+    messages = [
+        Message(role="tool", contents=[Content.from_function_result("cut", result="old")]),
+        Message(role="assistant", contents=[Content.from_text("earlier answer")]),
+        Message(role="assistant", contents=[Content.from_function_call("ok", "search_knowledge", arguments="{}")]),
+        Message(role="tool", contents=[Content.from_function_result("ok", result="hit")]),
+        Message(
+            role="assistant",
+            contents=[Content.from_text("partial"), Content.from_function_call("dangling", "list_sources", arguments="{}")],
+        ),
+        Message(role="user", contents=[Content.from_text("next question")]),
+    ]
+    repaired = drop_unpaired_tool_calls(messages)
+    assert [[(c.type, c.call_id) for c in m.contents] for m in repaired] == [
+        [("text", None)],
+        [("function_call", "ok")],
+        [("function_result", "ok")],
+        [("text", None)],
+        [("text", None)],
+    ]
 
 
 def test_format_retrieval_keeps_text_and_reference_fields():

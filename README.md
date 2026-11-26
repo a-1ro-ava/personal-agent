@@ -96,6 +96,7 @@ cd src/functions; .\.venv\Scripts\python.exe -m pytest -q tests
 * Web ページと記事本文の取得では robots.txt を確認し、5 MB を超える応答は取り込みません
 * 外部コンテンツの指示に従わないことをエージェントの指示に明記し、生成 HTML はサニタイズと CSP でスクリプトを無効化しています
 * 生成レポートは検索基盤に再投入していません (`content` コンテナのみをインデックス対象とする)
+* ホストは会話履歴の直近 100 件 (`DEFAULT_FETCH_HISTORY_ITEM_COUNT`) だけを再生するため、Teams のような長い会話ではツール呼び出しと結果の組が境界で分断されます。`HistoryRepairMiddleware` が対になっていない呼び出しと結果を除いてからモデルに送ります
 
 ## 未対応・検証中の事項
 
